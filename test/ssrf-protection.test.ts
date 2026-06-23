@@ -70,43 +70,52 @@ describe("ssrf-protection", () => {
     });
 
     it("should return false for invalid protocol", async () => {
-      expect(await isSafeUrl("ftp://example.com")).toBe(false);
+      expect((await isSafeUrl("ftp://example.com")).safe).toBe(false);
     });
 
     it("should return false for localhost and 0.0.0.0 bypasses", async () => {
-      expect(await isSafeUrl("http://localhost")).toBe(false);
-      expect(await isSafeUrl("http://0.0.0.0")).toBe(false);
-      expect(await isSafeUrl("http://[::1]")).toBe(false);
+      expect((await isSafeUrl("http://localhost")).safe).toBe(false);
+      expect((await isSafeUrl("http://0.0.0.0")).safe).toBe(false);
+      expect((await isSafeUrl("http://[::1]")).safe).toBe(false);
     });
 
     it("should return true for public IP literals directly without DNS", async () => {
-      expect(await isSafeUrl("http://8.8.8.8")).toBe(true);
-      expect(await isSafeUrl("http://[2001:4860:4860::8888]")).toBe(true);
+      expect((await isSafeUrl("http://8.8.8.8")).safe).toBe(true);
+      expect((await isSafeUrl("http://[2001:4860:4860::8888]")).safe).toBe(true);
     });
 
     it("should return true for public IPs via DNS", async () => {
       mockLookup.mockResolvedValue([{ address: "8.8.8.8", family: 4 }]);
-      expect(await isSafeUrl("http://example.com")).toBe(true);
+      const res = await isSafeUrl("http://example.com");
+      expect(res.safe).toBe(true);
+      expect(res.ip).toBe("8.8.8.8");
     });
 
     it("should return false for private IPv4", async () => {
       mockLookup.mockResolvedValue([{ address: "10.0.0.1", family: 4 }]);
-      expect(await isSafeUrl("http://internal.com")).toBe(false);
+      expect((await isSafeUrl("http://internal.com")).safe).toBe(false);
     });
 
     it("should return false for IPv6-mapped IPv4 private address", async () => {
       mockLookup.mockResolvedValue([{ address: "::ffff:192.168.1.1", family: 6 }]);
-      expect(await isSafeUrl("http://internal.com")).toBe(false);
+      expect((await isSafeUrl("http://internal.com")).safe).toBe(false);
     });
 
     it("should return false for IPv6 loopback and link-local", async () => {
       mockLookup.mockResolvedValue([{ address: "fe80::1", family: 6 }]);
-      expect(await isSafeUrl("http://internal.com")).toBe(false);
+      expect((await isSafeUrl("http://internal.com")).safe).toBe(false);
     });
 
     it("should return true for public IPv6", async () => {
       mockLookup.mockResolvedValue([{ address: "2001:4860:4860::8888", family: 6 }]);
-      expect(await isSafeUrl("http://example.com")).toBe(true);
+      const res = await isSafeUrl("http://example.com");
+      expect(res.safe).toBe(true);
+      expect(res.ip).toBe("2001:4860:4860::8888");
+    });
+
+    it("should return false for 0.0.0.0 via DNS", async () => {
+      mockLookup.mockResolvedValue([{ address: "0.0.0.0", family: 4 }]);
+      expect((await isSafeUrl("http://internal.com")).safe).toBe(false);
     });
   });
 });

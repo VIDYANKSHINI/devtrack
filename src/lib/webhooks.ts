@@ -80,8 +80,8 @@ export async function dispatchWebhook(
   const signature = signPayload(payloadString, secret);
 
   const { isSafeUrl } = await import("./ssrf-protection");
-  const safe = await isSafeUrl(webhook.url);
-  if (!safe) {
+  const validationResult = await isSafeUrl(webhook.url);
+  if (!validationResult.safe || !validationResult.ip) {
     const errorMessage = "SSRF protection: blocked request to private/internal address";
     await supabaseAdmin.from("webhook_deliveries").insert({
       webhook_id: webhookId,
@@ -97,13 +97,25 @@ export async function dispatchWebhook(
   let errorMessage: string | undefined;
 
   try {
-    const response = await fetch(webhook.url, {
+    const originalUrl = new URL(webhook.url);
+    const fetchUrl = new URL(webhook.url);
+    
+    // Mitigate TOCTOU DNS Rebinding by fetching the explicitly resolved IP
+    // If it's IPv6, wrap in brackets.
+    if (validationResult.ip.includes(":")) {
+      fetchUrl.hostname = `[${validationResult.ip}]`;
+    } else {
+      fetchUrl.hostname = validationResult.ip;
+    }
+
+    const response = await fetch(fetchUrl.toString(), {
   method: "POST",
   headers: {
     "Content-Type": "application/json",
     "X-Webhook-Signature": `sha256=${signature}`,
     "X-Webhook-Event": event,
     "X-Webhook-Delivery-Id": webhookId,
+    "Host": originalUrl.host, // Send the original hostname for SNI/routing
   },
   body: payloadString,
   signal: AbortSignal.timeout(10000),
@@ -117,9 +129,9 @@ if ([301, 302, 303, 307, 308].includes(response.status)) {
     throw new Error("Redirect response missing location header");
   }
 
-  const redirectSafe = await isSafeUrl(location);
+  const redirectValidation = await isSafeUrl(location);
 
-  if (!redirectSafe) {
+  if (!redirectValidation.safe) {
     throw new Error(
       "SSRF protection: blocked redirect to private/internal address"
     );

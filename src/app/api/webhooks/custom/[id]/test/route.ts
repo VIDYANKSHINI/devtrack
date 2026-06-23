@@ -49,8 +49,8 @@ export async function POST(
     return Response.json({ error: "Failed to decrypt webhook secret" }, { status: 500 });
   }
 
-  const safe = await isSafeUrl(webhook.url);
-  if (!safe) {
+  const validationResult = await isSafeUrl(webhook.url);
+  if (!validationResult.safe || !validationResult.ip) {
     return Response.json(
       { error: "Webhook URL is not allowed. Private, loopback, and internal addresses are blocked." },
       { status: 400 }
@@ -77,13 +77,25 @@ export async function POST(
   let responseBody: string | undefined;
 
   try {
-    const response = await fetch(webhook.url, {
+    const originalUrl = new URL(webhook.url);
+    const fetchUrl = new URL(webhook.url);
+    
+    // Mitigate TOCTOU DNS Rebinding by fetching the explicitly resolved IP
+    // If it's IPv6, wrap in brackets.
+    if (validationResult.ip.includes(":")) {
+      fetchUrl.hostname = `[${validationResult.ip}]`;
+    } else {
+      fetchUrl.hostname = validationResult.ip;
+    }
+
+    const response = await fetch(fetchUrl.toString(), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "X-Webhook-Signature": `sha256=${signature}`,
         "X-Webhook-Event": "test",
         "X-Webhook-Delivery-Id": webhook.id,
+        "Host": originalUrl.host, // Send the original hostname for SNI/routing
       },
       body: payloadString,
       signal: AbortSignal.timeout(15000),

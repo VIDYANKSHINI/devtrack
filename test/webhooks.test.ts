@@ -27,7 +27,7 @@ describe("Webhooks Module", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     // Setup default mocks
-    vi.mocked(ssrfModule.isSafeUrl).mockResolvedValue(true);
+    vi.mocked(ssrfModule.isSafeUrl).mockResolvedValue({ safe: true, ip: "8.8.8.8" });
     vi.mocked(cryptoModule.encryptToken).mockReturnValue({ encrypted: "enc_key", iv: "iv_value" });
     vi.mocked(cryptoModule.decryptToken).mockReturnValue("decrypted_secret");
     vi.mocked(supabaseAdmin.from).mockReturnValue({
@@ -399,7 +399,7 @@ describe("Webhooks Module", () => {
     });
 
     it("should block SSRF attacks", async () => {
-      vi.mocked(ssrfModule.isSafeUrl).mockResolvedValue(false);
+      vi.mocked(ssrfModule.isSafeUrl).mockResolvedValue({ safe: false });
       const result = await dispatchWebhook("webhook_123", "goal.completed", {});
       expect(result.success).toBe(false);
       expect(result.error).toContain("SSRF");
@@ -493,7 +493,7 @@ describe("Webhooks Module", () => {
       const fetchCall = (global.fetch as any).mock.calls[0];
       const url = fetchCall[0];
 
-      expect(url).toBe(mockWebhookConfig.url);
+      expect(url).toBe("https://8.8.8.8/webhook");
     });
 
     it("should handle various webhook events", async () => {

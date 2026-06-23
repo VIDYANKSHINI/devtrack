@@ -2,11 +2,12 @@ import dns from "dns/promises";
 import net from "net";
 
 const PRIVATE_RANGES = [
-  { start: 0x0a000000, end: 0x0affffff },
-  { start: 0xac100000, end: 0xac1fffff },
-  { start: 0xc0a80000, end: 0xc0a8ffff },
-  { start: 0x7f000000, end: 0x7fffffff },
-  { start: 0xa9fe0000, end: 0xa9feffff },
+  { start: 0x00000000, end: 0x00ffffff }, // 0.0.0.0/8
+  { start: 0x0a000000, end: 0x0affffff }, // 10.0.0.0/8
+  { start: 0xac100000, end: 0xac1fffff }, // 172.16.0.0/12
+  { start: 0xc0a80000, end: 0xc0a8ffff }, // 192.168.0.0/16
+  { start: 0x7f000000, end: 0x7fffffff }, // 127.0.0.0/8
+  { start: 0xa9fe0000, end: 0xa9feffff }, // 169.254.0.0/16
 ];
 
 function ipToNumber(ip: string): number {
@@ -52,11 +53,11 @@ function isPrivateIP(ip: string): boolean {
   return PRIVATE_RANGES.some(({ start, end }) => num >= start && num <= end);
 }
 
-export async function isSafeUrl(url: string): Promise<boolean> {
+export async function isSafeUrl(url: string): Promise<{ safe: boolean; ip?: string }> {
   try {
     const parsed = new URL(url);
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-      return false;
+      return { safe: false };
     }
 
     const hostname = parsed.hostname;
@@ -67,11 +68,14 @@ export async function isSafeUrl(url: string): Promise<boolean> {
 
     // Block localhost/unspecified/loopback hostnames before DNS resolution
     if (hostname === "localhost" || ipToCheck === "0.0.0.0" || ipToCheck === "::1") {
-      return false;
+      return { safe: false };
     }
 
     if (net.isIP(ipToCheck)) {
-      return !isPrivateIP(ipToCheck);
+      if (isPrivateIP(ipToCheck)) {
+        return { safe: false };
+      }
+      return { safe: true, ip: ipToCheck };
     }
 
     const addresses: string[] = [];
@@ -82,22 +86,23 @@ export async function isSafeUrl(url: string): Promise<boolean> {
         addresses.push(...lookupResults.map((r) => r.address));
       }
     } catch {
-      return false;
+      return { safe: false };
     }
 
     if (addresses.length === 0) {
-      return false;
+      return { safe: false };
     }
 
     for (const addr of addresses) {
       if (isPrivateIP(addr)) {
-        return false;
+        return { safe: false };
       }
     }
 
-    return true;
+    // Return the first resolved IP address to prevent TOCTOU DNS rebinding
+    return { safe: true, ip: addresses[0] };
   } catch {
-    return false;
+    return { safe: false };
   }
 }
 

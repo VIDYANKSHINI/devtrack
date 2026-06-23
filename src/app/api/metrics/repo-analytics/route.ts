@@ -37,7 +37,8 @@ export async function GET(req: NextRequest) {
   const repoUrl = `${GITHUB_API}/repos/${safeRepoPath}`;
   let urlSafe = false;
   try {
-    urlSafe = await isSafeUrl(repoUrl);
+    const validation = await isSafeUrl(repoUrl);
+    urlSafe = validation.safe;
   } catch {
     urlSafe = false;
   }
